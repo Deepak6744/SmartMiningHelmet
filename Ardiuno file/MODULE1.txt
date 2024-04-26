@@ -1,0 +1,248 @@
+#include <Wire.h>
+#include <ESP8266WiFi.h>
+
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <DHT.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_ADXL345_U.h>
+int s1=0;
+//#include "MAX30100_PulseOximeter.h"
+
+#define REPORTING_PERIOD_MS     1000
+
+//PulseOximeter pox;
+
+uint32_t tsLastReport = 0;
+
+
+void onBeatDetected()
+{
+    Serial.println("Beat!");
+}
+
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_RESET    -1
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+const char* ssid     = "wifi001";
+const char* password = "12345678";
+
+const char* host = "iotprojects20232.000webhostapp.com";
+const char* streamId   = "....................";
+const char* privateKey = "....................";
+
+
+#define GAS_SENSOR_PIN D0 
+#define DHTPIN D3
+#define LDR_PIN A0
+#define DHTTYPE DHT11    
+
+DHT dht(DHTPIN, DHTTYPE);
+Adafruit_ADXL345_Unified accel = Adafruit_ADXL345_Unified();
+
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+
+  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+  display.clearDisplay();
+  display.setTextColor(SSD1306_WHITE);
+  display.setTextSize(1);
+
+  pinMode(GAS_SENSOR_PIN, INPUT);
+  dht.begin();
+
+ 
+  if (!accel.begin()) {
+    Serial.println("ADXL345 not detected");
+    
+  }
+  
+  Serial.println();
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+  
+  WiFi.begin(ssid, password);
+  
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("");
+  Serial.println("WiFi connected");  
+  Serial.println("IP address: ");
+  Serial.println(WiFi.localIP());
+  Serial.print("Initializing pulse oximeter..");
+
+
+  
+//  pox.begin();
+//  pox.setOnBeatDetectedCallback(onBeatDetected);
+
+}
+
+void loop() {
+  // Read gas sensor
+  int gasValue = digitalRead(GAS_SENSOR_PIN);
+  displayGas(gasValue);
+
+  // Read temperature
+  float temperature = dht.readTemperature();
+  if(isnan(temperature))
+{
+  temperature=32;
+}
+  displayTemperature(temperature);
+
+  
+  int ldrValue = analogRead(LDR_PIN);
+  int lightIntensity = map(ldrValue, 0, 1023, 0, 100);
+  displayLightIntensity(ldrValue, lightIntensity);
+
+  
+  sensors_event_t event;
+  accel.getEvent(&event);
+  checkAccel(event.acceleration.x);
+
+  //pox.update();
+
+   // Serial.print("HB = ");
+  //      Serial.println(pox.getHeartRate());
+
+
+  Serial.print("connecting to ");
+  Serial.println(host);
+  
+
+  WiFiClient client;
+  const int httpPort = 80;
+  if (!client.connect(host, httpPort)) {
+    Serial.println("connection failed");
+    return;
+  }
+
+
+
+  
+
+ 
+ 
+  String url = "GET http://iotprojects20232.000webhostapp.com/smart_helmet/update.php?temp="; 
+  url+=temperature;
+  url+="&hum=";
+  url+="0";
+  url+="&sm=";
+  url+="0";
+  url+="&irv=";
+  url+=lightIntensity;
+  url+="&gas=";
+  url+=gasValue;
+  url+="&s1=";
+  url+=s1;
+  url+=" HTTP/1.1\r\nHost: iotprojects20232.000webhostapp.com\r\n\r\n";
+  url += "\r\n\r\n";
+  Serial.print("Requesting URL: ");
+  Serial.println(url);
+  
+  // This will send the request to the server
+  client.print(url);
+  unsigned long timeout = millis();
+  while (client.available() == 0) {
+    if (millis() - timeout > 5000) {
+      Serial.println(">>> Client Timeout !");
+      client.stop();
+      return;
+    }
+  }
+  
+  
+  while(client.available()){
+    char a=client.read();
+    //String line = client.readStringUntil('\r');
+    //Serial.print(line);
+   
+    Serial.print(a);
+   /* 
+ if(a=='*')
+    {
+      a=client.read();
+    Serial.print(a);
+    if(a=='a')
+    {
+      a=client.read();
+      Serial.print(a);
+    if(a=='1')
+    {
+      digitalWrite(D6,LOW);
+      }
+      else if(a=='2')
+    {
+      digitalWrite(D7,LOW);
+      }  
+      else if(a=='0')
+    {
+      digitalWrite(D6,HIGH);
+      digitalWrite(D7,HIGH);
+      }  
+      
+    }  
+      }
+     */
+    } 
+
+  delay(1000); 
+}
+void displayGas(int gasValue) {
+  display.clearDisplay();
+  display.setCursor(0, 0);
+  if (gasValue == HIGH) {
+    display.println("Gas detected!");
+  } else {
+    display.println("No gas detected.");
+  }
+  display.display();
+  delay(1000);
+}
+
+void displayTemperature(float temperature) {
+  display.clearDisplay();
+  display.setCursor(0, 0);
+  display.print("Temperature: ");
+  display.print(temperature);
+  display.println(" C");
+  display.display();
+  delay(1000);
+}
+
+void displayLightIntensity(int ldrValue, int lightIntensity) {
+  display.clearDisplay();
+  display.setCursor(0, 0);
+  display.print("LDR Sensor Value: ");
+  display.println(ldrValue);
+  display.print("Light Intensity: ");
+  display.print(lightIntensity);
+  display.println("%");
+  display.display();
+  delay(2000);
+}
+
+void checkAccel(float ax) {
+  display.clearDisplay();
+  display.setCursor(0, 0);
+  display.print("Acceleration for X: ");
+  display.println(ax);
+
+  if (ax < 0) {
+    display.println("Mine worker is normal");
+    s1=0;
+  } else if (ax > 0) {
+    display.println("Mine worker fell down");
+    s1=1;
+  } 
+  delay(2000);
+
+  display.display();
+}
